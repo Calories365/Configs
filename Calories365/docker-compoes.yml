@@ -1,0 +1,96 @@
+version: '3'
+
+services:
+  calculator_php:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: php-final
+    container_name: calories365_php
+    working_dir: /var/www
+    env_file:
+      - ./.env
+    depends_on:
+      - meilisearch
+      - calories_mysql
+      - calories_redis
+    networks:
+      - internal_net
+
+  calories_queue_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: php-final
+    container_name: calories365_queue_worker
+    working_dir: /var/www
+    env_file:
+      - ./.env
+    depends_on:
+      - meilisearch
+      - calories_mysql
+      - calories_redis
+    networks:
+      - internal_net
+    user: "www-data"
+    command: php artisan queue:work --tries=3 --timeout=90
+    restart: always
+
+  calculator_nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: nginx-final
+    container_name: calories365_nginx
+    depends_on:
+      - calculator_php
+    ports:
+      - "8081:80"
+    networks:
+      - internal_net
+
+  meilisearch:
+    image: getmeili/meilisearch:latest
+    container_name: calories365_meili
+    env_file:
+      - ./.env
+    ports:
+      - "7700:7700"
+    volumes:
+      - meili_data:/meili_data
+    networks:
+      - internal_net
+
+  calories_mysql:
+    image: mysql:8.0
+    container_name: calories365_mysql
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3307:3306"
+    command: --default-authentication-plugin=mysql_native_password
+    networks:
+      - internal_net
+
+  calories_redis:
+    image: redis:7-alpine
+    container_name: calories365_redis
+    volumes:
+      - redis_data:/data
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    networks:
+      - internal_net
+
+volumes:
+  redis_data:
+  mysql_data:
+  meili_data:
+
+networks:
+  internal_net:
+    external: true

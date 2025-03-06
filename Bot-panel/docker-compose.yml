@@ -1,0 +1,83 @@
+version: '3'
+services:
+  bot_panel_php:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: php-final
+    container_name: bot_panel_php
+    working_dir: /var/www
+    env_file:
+      - ./.env
+    depends_on:
+      - bot_panel_redis
+      - bot_panel_mysql
+    networks:
+      - internal_net
+    volumes:
+      - ./bots-images:/var/www/storage/app/public
+
+  bot_panel_queue_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: php-final
+    container_name: bot_panel_queue_worker
+    working_dir: /var/www
+    env_file:
+      - ./.env
+    depends_on:
+      - bot_panel_mysql
+      - bot_panel_redis
+    networks:
+      - internal_net
+    command: php artisan queue:work --tries=3 --timeout=90
+    restart: always
+
+  bot_panel_nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: nginx-final
+    container_name: bot_panel_nginx
+    depends_on:
+      - bot_panel_php
+    ports:
+      - "8082:80"
+    networks:
+      - internal_net
+
+  bot_panel_mysql:
+    image: mysql:8.0
+    container_name: bot_panel_mysql
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - bot_panel_mysql_data:/var/lib/mysql
+    ports:
+      - "3308:3306"
+    command: --default-authentication-plugin=mysql_native_password
+    networks:
+      - internal_net
+
+  bot_panel_redis:
+    image: redis:7-alpine
+    container_name: bot_panel_redis
+    volumes:
+      - bot_panel_redis_data:/data
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    networks:
+      - internal_net
+
+volumes:
+  bot_panel_redis_data:
+  bot_panel_mysql_data:
+
+networks:
+  internal_net:
+    external: true
